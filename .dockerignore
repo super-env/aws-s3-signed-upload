@@ -9,3 +9,5 @@
 /phpunit.xml
 /README.md
 /boostrap/cache/*
+/.env
+/.env.example
