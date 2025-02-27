@@ -11,8 +11,7 @@ use RuntimeException;
 
 final class AwsS3SignedUploadUrl extends Command
 {
-
-    protected $signature = 'aws:s3-signed-upload-url {bucket_name? : The S3 bucket name} {--r|region= : The AWS Region to use (optional)} {--k|key= : The AWS Access Key ID to use} {--s|secret= : The AWS Secret Access Key to use}';
+    protected $signature = 'aws:s3-signed-upload-url {bucket_name? : The S3 bucket name} {file? : The S3 file key to create the presigned URL for} {--r|region= : The AWS Region to use (default: us-east-1)} {--k|key= : The AWS Access Key ID to use} {--s|secret= : The AWS Secret Access Key to use}';
 
     protected $description = 'Command description';
 
@@ -23,25 +22,53 @@ final class AwsS3SignedUploadUrl extends Command
         parent::__construct();
     }
 
-    private function buildAwsClient()
+    private function buildAwsClient(): void
     {
-        $this->awsClient = new S3Client([
-            'version' => 'latest',
-            'region' => $this->getAwsRegion(),
-            'credentials' => [
-                'key' => $this->getAwsAccessKeyId(),
-                'secret' => $this->getAwsSecretKey(),
-            ],
-        ]);
+        if (empty($this->awsClient)) {
+            $this->awsClient = new S3Client([
+                'version' => 'latest',
+                'region' => $this->getAwsRegion(),
+                'credentials' => [
+                    'key' => $this->getAwsAccessKeyId(),
+                    'secret' => $this->getAwsSecretKey(),
+                ],
+            ]);
+        }
     }
 
-    public function handle(): void
+    public function handle(): int
     {
-        $this->buildAwsClient();
+        try {
+            $this->buildAwsClient();
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
 
-        $bucketName = $this->getBucketName();
+            return self::FAILURE;
+        }
 
-        exit(0);
+        try {
+            $command = $this->awsClient->getCommand('PutObject', [
+                'Bucket' => $this->getBucketName(),
+                'Key' => $this->getFile(), // Generate a unique filename
+            ]);
+        } catch (\Exception $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $request = $this->awsClient->createPresignedRequest($command, '+20 minutes');
+
+        $presignedUrl = (string)$request->getUri();
+
+        $this->info("Generated presigned URL:\n$presignedUrl");
+
+        return self::SUCCESS;
+    }
+
+    private function getFile(): string
+    {
+        return $this->argument('file') ?? $this->ask('Enter the S3 file to create presigned upload URL for');
     }
 
     private function getBucketName(): string
@@ -99,7 +126,7 @@ final class AwsS3SignedUploadUrl extends Command
                 $this->line("  - $error");
             }
 
-            exit(1);
+            throw new RuntimeException('Invalid S3 bucket name.');
         }
 
         return $bucketName;
@@ -109,7 +136,7 @@ final class AwsS3SignedUploadUrl extends Command
     {
         $endpointsFile = base_path('/vendor/aws/aws-sdk-php/src/data/endpoints.json.php');
         $endpointsData = require($endpointsFile);
-        $region = $this->option('region') ?? env('AWS_REGION');
+        $region = $this->option('region') ?? env('AWS_REGION', 'us-east-1');
 
         if (!$region) {
             throw new RuntimeException('AWS Region must be specified either through the --region option or the AWS_REGION environment variable.');
