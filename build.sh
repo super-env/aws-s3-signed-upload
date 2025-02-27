@@ -1,4 +1,8 @@
 #!/bin/bash
 
+IMAGE_TAG=${1:-firalkus/aws-s3-signed-upload}
+
+echo "Using image tag: $IMAGE_TAG"
+
 # Build and tag the Docker image
-docker build -t aws-s3-signed-upload -f build/Dockerfile .
+docker build -t "$IMAGE_TAG" -f build/Dockerfile .
