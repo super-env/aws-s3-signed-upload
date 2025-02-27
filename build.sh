@@ -1,6 +1,6 @@
 #!/bin/bash
 
-IMAGE_TAG=${1:-firalkus/aws-s3-signed-upload}
+IMAGE_TAG=${1:-superenv/aws-s3-signed-upload}
 
 echo "Using image tag: $IMAGE_TAG"
 
