@@ -1,6 +1,9 @@
-name: Build and Push to GHCR (Multi-Arch)
+name: Build and Push to GHCR (Multi-Arch + Versioning)
 
 on:
+  push:
+    tags:
+      - 'v*'  # Trigger only on version tags (e.g., v1.0.0)
   pull_request:
     types:
       - closed
@@ -28,10 +31,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Define image tag
+      - name: Extract version tag (if available)
+        id: version
         run: |
-          GHCR_IMAGE="ghcr.io/${{ github.repository_owner }}/aws-s3-signed-upload"
-          echo "GHCR_IMAGE=$GHCR_IMAGE" >> $GITHUB_ENV
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="latest"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "GHCR_IMAGE=ghcr.io/${{ github.repository_owner }}/aws-s3-signed-upload:$VERSION" >> $GITHUB_ENV
 
       - name: Build and push multi-architecture image
         run: |
@@ -42,4 +51,5 @@ jobs:
             --platform linux/amd64,linux/arm64 \
             --push \
             -t ${{ env.GHCR_IMAGE }} \
+            -t ghcr.io/${{ github.repository_owner }}/aws-s3-signed-upload:latest \
             -f build/Dockerfile .
