@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\RequiredValueException;
 use Aws\S3\S3Client;
 use Closure;
 use Exception;
@@ -9,7 +10,6 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use RuntimeException;
 
 final class AwsS3SignedUploadUrl extends Command
 {
@@ -25,7 +25,7 @@ final class AwsS3SignedUploadUrl extends Command
         '--x-s3',
     ];
 
-    protected $signature = 'aws:s3-signed-upload-url {bucket_name : The S3 bucket name} {file? : The S3 file key to create the presigned URL for} {--r|region= : The AWS Region to use (default: us-east-1)} {--k|key= : The AWS Access Key ID to use} {--s|secret= : The AWS Secret Access Key to use} {--hours=24 : The number of hours the presigned URL should be valid for}';
+    protected $signature = 'aws:s3-signed-upload-url {bucket_name : The S3 bucket name} {key : The S3 key to create the presigned URL for} {--r|region= : The AWS Region to use (default: us-east-1)} {--hours=24 : The number of hours the presigned URL should be valid for}';
 
     protected $description = 'Command description';
 
@@ -55,7 +55,7 @@ final class AwsS3SignedUploadUrl extends Command
 
         try {
             $this->buildAwsClient();
-        } catch (RuntimeException $exception) {
+        } catch (RequiredValueException $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
@@ -76,7 +76,7 @@ final class AwsS3SignedUploadUrl extends Command
             return self::FAILURE;
         }
 
-        $request = $this->awsClient->createPresignedRequest($command, '+20 minutes');
+        $request = $this->awsClient->createPresignedRequest($command, $expiresAfter);
 
         $presignedUrl = (string)$request->getUri();
 
@@ -87,13 +87,7 @@ final class AwsS3SignedUploadUrl extends Command
 
     private function getFile(): string
     {
-        $file = $this->argument('file') ?? $this->ask('Enter the S3 file to create presigned upload URL for');
-
-        if (!empty($file)) {
-            return $file;
-        }
-
-        return 'todo';
+        return $this->argument('key') ?? $this->ask('Enter the S3 key to create presigned upload URL for');
     }
 
     private function getBucketName(): string
@@ -151,7 +145,7 @@ final class AwsS3SignedUploadUrl extends Command
                 $this->line("  - $error");
             }
 
-            throw new RuntimeException("Invalid S3 bucket name: $bucketName.");
+            throw new RequiredValueException("Invalid S3 bucket name: $bucketName.");
         }
 
         return $bucketName;
@@ -164,8 +158,6 @@ final class AwsS3SignedUploadUrl extends Command
      * command-line option or the AWS_REGION environment variable. It validates
      * the region against the available AWS regions data, and throws a runtime
      * exception if the region is invalid or unspecified.
-     *
-     * @throws RuntimeException If the AWS Region is missing or invalid.
      */
     private function getAwsRegion(): string
     {
@@ -174,12 +166,12 @@ final class AwsS3SignedUploadUrl extends Command
         $region = $this->option('region') ?? env('AWS_REGION', 'us-east-1');
 
         if (!$region) {
-            throw new RuntimeException('AWS Region must be specified either through the --region option or the AWS_REGION environment variable.');
+            throw new RequiredValueException('AWS Region must be specified either through the --region option or the AWS_REGION environment variable.');
         }
 
         foreach ($endpointsData['partitions'] as $partitionData) {
             if (!isset($partitionData['regions'][$region])) {
-                throw new RuntimeException(sprintf('Invalid AWS Region: "%s". Please specify a valid region.', $region));
+                throw new RequiredValueException(sprintf('Invalid AWS Region: "%s". Please specify a valid region.', $region));
             }
 
             $this->info(sprintf("Using AWS Region: %s - %s", $region, $partitionData['regions'][$region]['description']));
@@ -192,14 +184,14 @@ final class AwsS3SignedUploadUrl extends Command
 
     private function getAwsAccessKeyId(): string
     {
-        $key = $this->option('key') ?? env('AWS_ACCESS_KEY_ID');
+        $key = env('AWS_ACCESS_KEY_ID') ?? $this->ask('Enter the AWS Access Key ID');
 
         if (!$key) {
-            throw new RuntimeException('AWS Access Key ID must be specified either through the --key option or the AWS_ACCESS_KEY_ID environment variable.');
+            throw new RequiredValueException('AWS Access Key ID must be specified either through the --key option or the AWS_ACCESS_KEY_ID environment variable.');
         }
 
         if (!preg_match('/^(AKIA|ASIA)[0-9A-Z]{16}$/', $key)) {
-            throw new RuntimeException('Invalid AWS Access Key ID format. It must start with "AKIA" or "ASIA" followed by 16 alphanumeric characters.');
+            throw new RequiredValueException('Invalid AWS Access Key ID format. It must start with "AKIA" or "ASIA" followed by 16 alphanumeric characters.');
         }
 
         $this->info(sprintf("Using AWS Access Key ID: %s", Str::of($key)->mask('*', 4, 12)));
@@ -215,19 +207,17 @@ final class AwsS3SignedUploadUrl extends Command
      * environment variable. It validates the format of the key to ensure
      * it adheres to AWS requirements, and throws a runtime exception
      * if the key is missing or invalid.
-     *
-     * @throws RuntimeException If the Secret Access Key is missing or invalid.
      */
     private function getAwsSecretKey(): string
     {
-        $secret = $this->option('secret') ?? env('AWS_SECRET_ACCESS_KEY');
+        $secret = env('AWS_SECRET_ACCESS_KEY') ?? $this->ask('Enter the AWS Secret Access Key');
 
         if (!$secret) {
-            throw new RuntimeException('AWS Secret Access Key must be specified either through the --secret option or the AWS_SECRET_ACCESS_KEY environment variable.');
+            throw new RequiredValueException('AWS Secret Access Key must be specified either through the --secret option or the AWS_SECRET_ACCESS_KEY environment variable.');
         }
 
         if (!preg_match('/^[A-Za-z0-9\/+=]{40}$/', $secret)) {
-            throw new RuntimeException('Invalid AWS Secret Access Key format. It must be 40 characters long and contain only alphanumeric characters, forward slashes, plus signs, or equals signs.');
+            throw new RequiredValueException('Invalid AWS Secret Access Key format. It must be 40 characters long and contain only alphanumeric characters, forward slashes, plus signs, or equals signs.');
         }
 
         $this->info(sprintf("Using AWS Secret Access Key: %s", Str::of($secret)->mask('*', 4, 32)));
@@ -235,16 +225,16 @@ final class AwsS3SignedUploadUrl extends Command
         return $secret;
     }
 
-    private function getExpiresAfter(): Carbon
+    private function getExpiresAfter(): string
     {
-        $hours = $this->option('hours') ?? $this->ask('Enter the number of hours for the URL to expire after (max 168 hours (7 days))');
+        $hours = (int)$this->option('hours') ?? $this->ask('Enter the number of hours for the URL to expire after (max 168 hours (7 days))', 12);
 
         if (!is_numeric($hours) || $hours <= 0 || $hours > 168) {
-            throw new RuntimeException('Invalid hours value. Please specify a number between 1 and 168.');
+            throw new RequiredValueException('Invalid hours value. Please specify a number between 1 and 168.');
         }
 
-        $this->info(sprintf("URL will expire after %s hours.", $hours));
+        $this->info(sprintf("URL will expire after %s hours, on the %s", $hours, Carbon::now()->addHours($hours)));
 
-        return Carbon::now()->addHours($hours);
+        return sprintf('+%s hours', $hours);
     }
 }
