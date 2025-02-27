@@ -1,11 +1,15 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "superenv/aws-s3-signed-upload",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Generate secure, presigned AWS S3 upload URLs via Docker CLI (up to 7 days valid).",
     "keywords": [
-        "laravel",
-        "framework"
+        "superenv",
+        "aws",
+        "s3",
+        "signed",
+        "url",
+        "upload"
     ],
     "license": "MIT",
     "require": {
